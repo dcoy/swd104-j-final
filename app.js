@@ -1,27 +1,22 @@
 const express = require('express');
 const app = express();
-const routes = require('./routes')
+const routes = require('./routes');
 const path = require('path');
 const config = require('./oauth.js');
 const logger = require('morgan');
 const mongoose = require('mongoose');
 const passport = require('passport');
-const GoogleStrategy = require('passport-google-oauth2').Strategy;
-const GithubStrategy = require('passport-github2').Strategy;
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const bodyParser = require('body-parser');
 const session = require("cookie-session");
 const auth = require('./routes/authorized');
 
 const { Post } = require('./models/Post');
-const { User } = require('./models/User');
-
+const User = require('./models/User');
+const dbConnection = `mongodb://${process.env.dbuser}:${process.env.dbpassword}@ds237979.mlab.com:37979/swd104-j_final`;
 mongoose.Promise = global.Promise;
 
-if (process.env.NODE_ENV !== 'production') {
-  require('dotenv').load();
-}
-
-mongoose.connect(`mongodb://${process.env.dbuser}:${process.env.dbpassword}@ds237979.mlab.com:37979/swd104-j_final`)
+mongoose.connect(dbConnection)
   .then(() => console.log('connection successful'))
   .catch((err) => console.error(error));
 
@@ -44,12 +39,12 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Passport authenticated persistence
-passport.serializeUser(((user, cb) => {
-  cb(null, user.id);
+passport.serializeUser(((user, done) => {
+  done(null, user.id);
 }));
-passport.deserializeUser(((id, cb) => {
+passport.deserializeUser(((id, done) => {
   User.findById(id, (err, user) => {
-    cb(err, user);
+    done(err, user);
   })
 }));
 
@@ -60,28 +55,24 @@ passport.use(new GoogleStrategy({
   proxy: true
 },
   (accessToken, refreshToken, account, done) => {
-    User.findOne({ 'googleId': account.id }), (err, user) => {
-      if (!user) {
-        let new_account = {}
-        new_account.id = account.id
-        new_account.displayName = account.displayName
-        new_account.emails = account.emails
-        user = new User({
-          name: account.displayName,
-          email: account.emails[0].value,
-          username: account.username,
-          provider: 'google',
-          // google: new_account._json
-        })
-        user.save((err) => {
-          if (err) console.log(err)
-          return done(err, user)
-        })
-        done(null, user);
+    console.log(account);
+    User.findOne({ googleID: account.id }).then(user => {
+      if (user) {
+        done(null, user)
       } else {
-        return done(err, user)
+        new User({
+          googleID: account.value,
+          name: account.displayName
+        })
+        .save()
+        .then(user => {
+          done(null, user);
+        })
+        .catch(err => {
+          done(err, false);
+        })
       }
-    }  
+    });
   }));
 
 
@@ -136,19 +127,12 @@ app.get('/logout', (req, res) => {
   res.redirect('/');
 });
 
-// app.get('/signup', (request, response) => {
-//   response.render('signup');
-// });
-
 // catch 404 and forward to error handler
 app.use((req, res, next) => {
   let err = new Error('Not Found');
   err.status = 404;
   next(err);
 });
-
-// pass app to googleAuth
-// require('./routes/googleAuth')(app);
 
 // error handler
 app.use((err, req, res, next) => {
